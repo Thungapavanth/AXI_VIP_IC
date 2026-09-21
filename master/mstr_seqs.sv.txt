@@ -1,0 +1,104 @@
+class mstr_sequence extends uvm_sequence#(axi_xtn);
+	`uvm_object_utils(mstr_sequence)
+	
+
+	function new(string name="mstr_sequence");
+		super.new(name);
+	endfunction
+
+endclass
+
+
+class fixed extends mstr_sequence;
+	`uvm_object_utils(fixed)
+
+	axi_xtn xtn;
+	function new(string name= "fixed");
+		super.new(name);
+	endfunction
+
+
+	task body();
+		repeat(4)
+			begin
+				xtn=axi_xtn::type_id::create("xtn");
+				start_item(xtn);
+				assert(xtn.randomize() with {AWBURST==2'b00;AWADDR=='d4;AWSIZE==2; ARLEN==3;});
+				finish_item(xtn);
+			end
+	endtask
+endclass
+
+
+
+
+class increment extends mstr_sequence;
+	`uvm_object_utils(increment)
+
+
+	function new(string name = "increment");
+		super.new(name);
+	endfunction
+	axi_xtn xtn; 
+	task body();
+		repeat(5)
+			begin
+				xtn=axi_xtn::type_id::create("xtn");
+				start_item(xtn);
+				assert(xtn.randomize() with {AWBURST==2'b01;AWADDR=='d4;AWLEN==2;AWSIZE==1;});
+				finish_item(xtn);
+			end
+
+	endtask
+endclass
+
+
+
+
+class wrap extends mstr_sequence;
+	`uvm_object_utils(wrap)
+
+	axi_xtn xtn; 
+	function new(string name="wrap");
+		super.new(name);
+	endfunction
+
+	task body();
+		repeat(6)
+			begin
+				xtn=axi_xtn::type_id::create("xtn");
+				start_item(xtn);
+				assert(xtn.randomize() with {AWBURST==2'b10;});
+				finish_item(xtn);
+			end
+	endtask
+
+endclass
+
+class unaligned extends mstr_sequence;
+	`uvm_object_utils(unaligned)
+
+
+	function new(string name = "unaligned");
+		super.new(name);
+	endfunction
+	axi_xtn xtn; 
+	task body();
+		repeat(5)
+			begin
+				xtn=axi_xtn::type_id::create("xtn");
+				start_item(xtn);
+				assert(xtn.randomize() with {AWBURST==2'b01;AWADDR=='d13;});
+				finish_item(xtn);
+			end
+
+	endtask
+endclass
+
+
+
+
+
+
+ 
+

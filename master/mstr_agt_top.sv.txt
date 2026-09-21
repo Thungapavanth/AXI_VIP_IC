@@ -1,0 +1,28 @@
+class mstr_agent_top extends uvm_env;
+	`uvm_component_utils(mstr_agent_top)
+	
+	mstr_agent mstr_agth[];
+	mstr_config mstr_cfg;
+	env_config env_cfg;
+	
+
+	function new(string name="mstr_agent_top",uvm_component parent);
+		super.new(name,parent);
+	endfunction
+
+
+	function void build_phase(uvm_phase phase);
+		super.build_phase(phase);
+			if(!uvm_config_db#(env_config)::get(this,"","env_config",env_cfg))
+				`uvm_fatal("ENV_CFG","from agnt top env cfg is not getting")
+				mstr_agth=new[env_cfg.no_of_mstr_agnts];
+					foreach(mstr_agth[i])
+						begin
+							mstr_agth[i]=mstr_agent::type_id::create($sformatf("mstr_agth[%0d]",i),this);
+							uvm_config_db#(mstr_config)::set(this,$sformatf("mstr_agth[%0d]*",i),"mstr_config",env_cfg.mstr_cfg[i]);	
+						end
+
+
+	endfunction
+endclass
+

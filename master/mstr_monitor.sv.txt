@@ -1,0 +1,295 @@
+class mstr_monitor extends uvm_monitor;
+	`uvm_component_utils(mstr_monitor)
+
+	virtual axi_if axi_vif;
+	
+	uvm_analysis_port#(axi_xtn) mstr_aport;
+	mstr_config mstr_cfg;
+
+	axi_xtn xtn,xtn1;
+	axi_xtn q1[$],q2[$],q3[$],q4[$],q5[$];
+
+
+
+	//for particular master to be worked at a time//
+	semaphore sem_wdcd = new();//write data channel dependency//
+	semaphore sem_wrcd = new();//write reponse channel dependency//
+	semaphore sem_wdc  = new(1);//WRITE data channnel
+	semaphore sem_wac  = new(1);//write address channel
+	semaphore sem_wrc  = new(1);//write respose
+
+
+	semaphore sem_rdcd = new();//read data channel dependency
+	semaphore sem_rac  = new(1);//read address
+	semaphore sem_rdc  = new(1);//read data channel
+
+
+	function new(string name="mstr_monitor",uvm_component parent);
+		super.new(name,parent);
+		mstr_aport = new("mstr_aport",this);
+	endfunction
+	
+
+		function void build_phase(uvm_phase phase);
+			super.build_phase(phase);
+			if(!uvm_config_db#(mstr_config)::get(this,"","mstr_config",mstr_cfg))
+				`uvm_fatal("mstr_monitor","config is not getting");
+		endfunction
+
+		
+	function void connect_phase(uvm_phase phase);
+		axi_vif=mstr_cfg.axi_vif;
+	endfunction
+
+
+
+	//here there is no hand shaking mechanism because 
+	task run_phase(uvm_phase phase);
+		forever
+			collect_data();
+	endtask
+	
+
+
+	task collect_data();
+	//	q1.push_back(xtn);
+	//	q2.push_back(xtn);
+	//	q3.push_back(xtn);
+	//	q4.push_back(xtn);
+	//	q5.push_back(xtn);
+
+			fork
+				//write address//
+				begin
+					sem_wac.get(1);
+					collect_waddrc();
+					sem_wdcd.put(1);
+					sem_wac.put(1);
+				end
+
+
+				//write data//
+				begin
+					sem_wdcd.get(1);
+					sem_wdc.get(1);
+					collect_wdatac(q1.pop_front());
+					sem_wrcd.put(1);
+					sem_wdc.put(1);
+				end
+
+
+
+				//write response//
+				begin
+					sem_wrcd.get(1);
+					sem_wrc.get(1);
+					collect_wrspc(q2.pop_front());
+					sem_wrc.put(1);
+					//mstr_aport.write(xtn);
+
+				end
+
+
+
+				//read address//
+				begin
+					sem_rac.get(1);
+					collect_raddrc();
+					sem_rdcd.put(1);
+					sem_rac.put(1);
+				end
+
+
+				//read data//
+				begin
+					sem_rdcd.get(1);
+					sem_rdc.get(1);
+					collect_rdatac(q3.pop_front());
+					sem_rdc.put(1);
+					//mstr_aport.write(xtn1);
+
+				end
+			
+			join_any
+	endtask
+
+	task collect_waddrc();
+		xtn=axi_xtn::type_id::create("xtn");
+
+		//q1.push_back(xtn);
+
+		
+		@(axi_vif.mst_mon_cb);
+
+		wait((axi_vif.mst_mon_cb.AWVALID) && (axi_vif.mst_mon_cb.AWREADY))
+		xtn.AWID=axi_vif.mst_mon_cb.AWID;
+		xtn.AWADDR=axi_vif.mst_mon_cb.AWADDR;
+		xtn.AWLEN=axi_vif.mst_mon_cb.AWLEN;
+		xtn.AWSIZE=axi_vif.mst_mon_cb.AWSIZE;
+		xtn.AWBURST=axi_vif.mst_mon_cb.AWBURST;
+		xtn.AWVALID=axi_vif.mst_mon_cb.AWVALID;
+		xtn.AWREADY=axi_vif.mst_mon_cb.AWREADY;
+
+	//`uvm_info(get_type_name(),$sformatf("printing mstr mon waddr %s",xtn.sprint()),UVM_LOW)
+	//mstr_aport.write(xtn);
+			q1.push_back(xtn);
+		
+	
+	endtask
+
+
+	
+	task collect_wdatac(axi_xtn xtn);
+
+
+
+		//@(axi_vif.mst_mon_cb);	
+	//	wait(axi_vif.mst_mon_cb.WVALID && axi_vif.mst_mon_cb.WREADY)
+
+		//foreach(xtn.WDATA[i])
+
+
+
+
+
+			
+		xtn.WDATA = new[xtn.AWLEN+1];
+		xtn.WSTRB = new[xtn.AWLEN+1];
+			foreach(xtn.WDATA[i])
+				begin
+					wait(axi_vif.mst_mon_cb.WVALID && axi_vif.mst_mon_cb.WREADY)
+						xtn.WSTRB[i] = axi_vif.mst_mon_cb.WSTRB;
+							if(axi_vif.mst_mon_cb.WSTRB == 15)
+								xtn.WDATA[i] = axi_vif.mst_mon_cb.WDATA;
+
+							if(axi_vif.mst_mon_cb.WSTRB == 8)
+								xtn.WDATA[i] = axi_vif.mst_mon_cb.WDATA[31:24];
+
+							if(axi_vif.mst_mon_cb.WSTRB == 4)
+								xtn.WDATA[i] = axi_vif.mst_mon_cb.WDATA[23:16];
+
+							if(axi_vif.mst_mon_cb.WSTRB == 2)
+								xtn.WDATA[i] = axi_vif.mst_mon_cb.WDATA[15:8];
+
+							if(axi_vif.mst_mon_cb.WSTRB == 1)
+								xtn.WDATA[i] = axi_vif.mst_mon_cb.WDATA[7:0];
+
+							if(axi_vif.mst_mon_cb.WSTRB == 14)//unaligned strb 4 bytes 1110//
+								xtn.WDATA[i] = axi_vif.mst_mon_cb.WDATA[31:8];
+
+							if(axi_vif.mst_mon_cb.WSTRB == 12)
+								xtn.WDATA[i] = axi_vif.mst_mon_cb.WDATA[31:16];
+
+							if(axi_vif.mst_mon_cb.WSTRB == 3)
+								xtn.WDATA[i] = axi_vif.mst_mon_cb.WDATA[15:0];
+
+							xtn.WID = axi_vif.mst_mon_cb.WID;	
+							xtn.WLAST = axi_vif.mst_mon_cb.WLAST;
+							xtn.WVALID = axi_vif.mst_mon_cb.WVALID;
+							@(axi_vif.mst_mon_cb);
+				end
+
+
+	/*for(int i=0;i<=(xtn.AWLEN+1);i++)
+		begin
+			xtn.WID=axi_vif.mst_mon_cb.WID;
+			xtn.WDATA[i]=axi_vif.mst_mon_cb.WDATA;
+			xtn.WSTRB[i]=axi_vif.mst_mon_cb.WSTRB;
+			xtn.WLAST=axi_vif.mst_mon_cb.WLAST;
+			xtn.WVALID=axi_vif.mst_mon_cb.WVALID;
+			xtn.WREADY=axi_vif.mst_mon_cb.WREADY;
+		end*/
+	
+	
+	//`uvm_info(get_type_name(),$sformatf("printing mstr mon WDATA %s",xtn.sprint()),UVM_LOW)
+	//mstr_aport.write(xtn);
+			q2.push_back(xtn);
+
+			
+	endtask
+
+
+
+		
+	task collect_wrspc(axi_xtn xtn);
+
+
+
+
+		@(axi_vif.mst_mon_cb);	
+		wait(axi_vif.mst_mon_cb.BREADY && axi_vif.mst_mon_cb.BVALID)
+
+			xtn.BREADY=axi_vif.mst_mon_cb.BREADY;
+			xtn.BID=axi_vif.mst_mon_cb.BID;
+			xtn.BRESP=axi_vif.mst_mon_cb.BRESP;
+			xtn.BVALID=axi_vif.mst_mon_cb.BVALID;
+	
+		//mstr_aport.write(xtn);
+		@(axi_vif.mst_mon_cb);
+	//	xtn.print();
+//	`uvm_info(get_type_name(),$sformatf("printing mstr mon wresp %s",xtn.sprint()),UVM_LOW)
+	mstr_aport.write(xtn);
+
+		
+	endtask
+
+	
+			
+	task collect_raddrc();
+
+		xtn1=axi_xtn::type_id::create("xtn1");
+
+	
+		@(axi_vif.mst_mon_cb)	
+		wait(axi_vif.mst_mon_cb.ARVALID && axi_vif.mst_mon_cb.ARREADY)
+	
+			xtn1.ARID=axi_vif.mst_mon_cb.ARID;
+			xtn1.ARADDR=axi_vif.mst_mon_cb.ARADDR;
+			xtn1.ARLEN=axi_vif.mst_mon_cb.ARLEN;
+			xtn1.ARSIZE=axi_vif.mst_mon_cb.ARSIZE;
+			xtn1.ARBURST=axi_vif.mst_mon_cb.ARBURST;
+			xtn1.ARVALID=axi_vif.mst_mon_cb.ARVALID;
+			xtn1.ARREADY=axi_vif.mst_mon_cb.ARREADY;
+		
+	//`uvm_info(get_type_name(),$sformatf("printing mstr mon raddr %s",xtn.sprint()),UVM_LOW)
+//	mstr_aport.write(xtn);
+			q3.push_back(xtn1);
+	//	xtn1.print();
+
+	endtask
+
+
+	task collect_rdatac(axi_xtn xtn1);
+
+
+//xtn1.print();
+//	$display("00000000000000000000000000000000000  %d",xtn1.ARLEN);
+
+	//	xtn1=axi_xtn::type_id::create("xtn1");
+		xtn1.RDATA=new[xtn1.ARLEN+1];
+		xtn1.RRESP = new[xtn1.ARLEN+1];
+//	$display("00000000000000000000000000000000000  %p",xtn1.RDATA);
+
+		foreach(xtn1.RDATA[i])
+			begin
+		
+		@(axi_vif.mst_mon_cb);
+		wait(axi_vif.mst_mon_cb.RVALID && axi_vif.mst_mon_cb.RREADY);
+
+			xtn1.RID=axi_vif.mst_mon_cb.RID;
+			xtn1.RVALID=axi_vif.mst_mon_cb.RVALID;
+			xtn1.RREADY=axi_vif.mst_mon_cb.RREADY;
+			xtn1.RDATA[i]=axi_vif.mst_mon_cb.RDATA;
+			xtn1.RRESP[i]=axi_vif.mst_mon_cb.RRESP;
+
+		if(i==xtn1.ARLEN)
+			xtn1.RLAST=axi_vif.mst_mon_cb.RLAST;
+			end
+	
+	//`uvm_info(get_type_name(),$sformatf("printing mstr mon rdata %s",xtn.sprint()),UVM_LOW)
+	mstr_aport.write(xtn1);
+	//xtn1.print();
+	endtask
+		
+endclass
+

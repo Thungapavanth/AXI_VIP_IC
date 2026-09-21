@@ -1,0 +1,31 @@
+class mstr_agent extends uvm_agent;
+	`uvm_component_utils(mstr_agent)
+
+	mstr_config mstr_cfg;
+	mstr_driver mstr_drvh;
+	mstr_monitor mstr_monh;
+	mstr_sequencer mstr_seqrh;
+	
+	function new(string name="mstr_agent",uvm_component parent);
+		super.new(name,parent);
+	endfunction
+
+
+	function void build_phase(uvm_phase phase);
+		if(!uvm_config_db#(mstr_config)::get(this,"","mstr_config",mstr_cfg))
+			`uvm_fatal(get_type_name(),"mstr config is not getting from mstr_agent")
+	
+		mstr_monh=mstr_monitor::type_id::create("mstr_monh",this);
+		if(mstr_cfg.is_active==UVM_ACTIVE)
+			begin
+			mstr_drvh=mstr_driver::type_id::create("mstr_drvh",this);
+			mstr_seqrh=mstr_sequencer::type_id::create("mstr_seqrh",this);
+			end
+	endfunction
+
+
+	function void connect_phase(uvm_phase phase);
+		mstr_drvh.seq_item_port.connect(mstr_seqrh.seq_item_export);
+	endfunction
+endclass
+

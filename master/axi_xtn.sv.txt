@@ -1,0 +1,394 @@
+class axi_xtn extends uvm_sequence_item;
+	`uvm_object_utils(axi_xtn)
+
+
+	bit ARESETn;
+
+
+
+//declare write address channel signals
+
+
+	rand bit [3:0]  AWID;
+	rand bit [31:0] AWADDR;
+	rand bit [3:0]  AWLEN;
+	rand bit [2:0]  AWSIZE;
+	rand bit [1:0]  AWBURST;
+	bit AWVALID;
+	bit AWREADY;
+
+
+//declare write data signls
+
+
+	rand bit [3:0]  WID;
+	rand bit [31:0] WDATA[];
+	bit      [3:0]  WSTRB[];
+	bit WLAST;
+	bit WVALID;
+	bit WREADY;	
+
+
+//declare write response signals
+
+	rand bit [3:0] BID;
+	bit 	 [1:0] BRESP;
+	bit 	BVALID;
+	bit 	BREADY;
+	
+
+//declaration read address signlas
+
+	rand bit [3:0] ARID;
+	rand bit [31:0] ARADDR;
+	rand bit [3:0] ARLEN;
+	rand bit [2:0] ARSIZE;
+	rand bit [1:0] ARBURST;
+	bit ARREADY;
+	bit ARVALID;
+
+
+
+//decalare read data signlas
+
+
+	rand bit [3:0] RID;
+	rand bit [31:0] RDATA[];
+	rand bit [1:0] RRESP[];
+	bit RLAST;
+	bit RREADY;
+	bit RVALID;
+
+
+
+
+
+///calculation part//
+
+	bit [31:0] waddr[];
+	int no_wbytes;
+	int aligned_waddr;
+	int start_waddr;
+
+
+	bit [31:0] raddr[];
+	int no_rbytes;
+	int aligned_raddr;
+	int start_raddr;
+
+
+
+
+//CONSTRAINTS//
+
+
+constraint wdata {WDATA.size() ==(AWLEN+1);}
+constraint rdata {RDATA.size() ==(ARLEN+1);}
+
+
+constraint awb {AWBURST dist {0:=10,1:=10,2:=10};}//burst 0 means fixed,inc,wrap for write//
+constraint arb {ARBURST dist {0:=10,1:=10,2:=10};}//read//
+
+
+
+constraint write_id {AWID==WID;AWID==BID;}//write addr id = wdata and wresponse//
+constraint read_id {ARID==RID;}
+
+
+
+
+constraint adwr {AWSIZE dist {0:=10,1:=10,2:=10};}//size 2^0=1,2^1=2//
+constraint adrs {ARSIZE dist {0:=10,1:=10,2:=10};}
+
+constraint wrap_len1 {if(AWBURST == 2'b10) (AWLEN+1) inside {2,4,8,16};}
+constraint wrap_len2 {if(ARBURST == 2'b10) (AWLEN+1) inside {2,4,8,16};}
+
+
+constraint wlen {AWLEN inside {[0:15]};}
+constraint rlen {ARLEN inside {[0:15]};}
+
+
+constraint wr_align1{((AWBURST ==2'b10 || AWBURST ==2'b00) && AWSIZE ==1) ->  AWADDR%2 ==0;}	//Allignment for wrap and fixed//
+constraint wr_align2{((AWBURST ==2'b10 || AWBURST ==2'b00) && AWSIZE ==1) ->  AWADDR%4 ==0;}	//Allignment for wrap and fixed//
+
+
+constraint rd_align1{((ARBURST ==2'b10 || ARBURST ==2'b00) && ARSIZE ==1) ->  ARADDR%2 ==0;}	//Allignment for wrap and fixed//
+constraint rd_align2{((ARBURST ==2'b10 || ARBURST ==2'b00) && ARSIZE ==1) ->  ARADDR%2 ==0;}	//Allignment for wrap and fixed//
+
+
+constraint max_wboun {(2**AWSIZE)*(AWLEN+1) < 4096;}
+constraint max_rboun {(2**ARSIZE)*(AWLEN+1) < 4096;}
+
+
+
+
+	
+	function new(string name="axi_xtn");
+		super.new(name);
+	endfunction
+
+	function void post_randomize();
+		
+		//write//
+
+		no_wbytes = 2**AWSIZE;
+		aligned_waddr = (int'(AWADDR/no_wbytes))*no_wbytes;
+		start_waddr = AWADDR;
+		WSTRB = new[AWLEN+1];
+
+		$display("w addr %p",waddr);
+		$display("aligned_waddr %d",aligned_waddr);
+		//read//
+		no_rbytes = 2**ARSIZE;
+		aligned_raddr = (int'(ARADDR/no_rbytes))*no_rbytes;
+		start_raddr = ARADDR;
+		
+		cal_waddr();
+
+		strb_cal();
+		
+		cal_raddr();
+
+		//this.print();
+		
+	endfunction	
+	
+
+
+	function void cal_waddr();
+		bit wb;  //whether wrap is happend or not//
+		int burst_len =AWLEN+1;//how many tranfers it going to happen//
+		int N=burst_len;
+		int wrap_boundary = (int'(start_waddr/(no_wbytes*burst_len)))*(no_wbytes*burst_len);
+		int addr_n = wrap_boundary + (no_wbytes*burst_len);
+		waddr = new[AWLEN+1];
+
+		waddr[0] =AWADDR;
+		no_wbytes = 2**AWSIZE;
+		aligned_waddr = (int'(AWADDR/no_wbytes))*no_wbytes;
+
+
+		for(int i=2;i<(burst_len+1);i++)
+			begin
+			
+				if(AWBURST==2'b00)
+				waddr[i-1]=AWADDR;//fixed//
+
+				if(AWBURST==2'b01)
+				waddr[i-1]=aligned_waddr+(i-1)*no_wbytes;//increment// 
+
+				if(AWBURST==2'b10)
+					begin
+						if(wb==0)//wrap//
+							begin
+								waddr[i-1]=aligned_waddr+(i-1)*no_wbytes;
+								if(waddr[i-1]==(wrap_boundary+(no_wbytes*burst_len)))
+								begin
+									waddr[i-1]=wrap_boundary;
+									wb++;
+								end
+							end
+						else
+							waddr[i-1]=start_waddr+((i-1)*no_wbytes)-(no_wbytes*burst_len);
+					end
+		
+
+			end
+
+	endfunction
+
+
+
+
+
+
+	function void cal_raddr();
+		bit wb;
+		int burst_len = ARLEN+1;
+		int N = burst_len;
+		int wrap_boundary = (int'(ARADDR/(no_rbytes*burst_len)))*(no_rbytes*burst_len);
+		int addr_n = wrap_boundary+(no_rbytes*burst_len);
+	
+		raddr = new[ARLEN+1];
+
+		raddr[0] = ARADDR;
+		no_rbytes = 2**ARSIZE;
+		aligned_raddr = (int'(ARADDR/no_rbytes))*no_rbytes;
+		start_raddr = ARADDR;
+
+		for(int i = 2; i<(burst_len+1);i++) 
+		begin
+			if(ARBURST == 0) 
+				raddr[i-1]=ARADDR;
+
+			if(ARBURST == 1) 
+				raddr[i-1] = aligned_raddr+(i-1)*no_rbytes;
+	
+			if(ARBURST == 2) 
+			begin
+				if(wb==0)
+				begin
+					raddr[i-1] = aligned_raddr + (i-1)*no_rbytes;
+					if(raddr[i-1] == (wrap_boundary + (no_rbytes*burst_len)))
+					begin
+						raddr[i-1] = wrap_boundary;
+						wb++;
+					end
+				end
+			end
+			else 
+				raddr[i-1] = start_raddr + ((i-1)*no_rbytes)-(no_rbytes*burst_len);
+		end
+
+	endfunction
+
+
+
+
+
+//strobe calculation///
+function void strb_cal();
+	int data_bus_bytes=4;
+	int lower_byte_lane,upper_byte_lane;
+
+
+	int lower_byte_lane_0 = start_waddr - ((int'(start_waddr/data_bus_bytes))*data_bus_bytes);
+	int upper_byte_lane_0 = (aligned_waddr + (no_wbytes-1)) - ((int'(start_waddr/data_bus_bytes))*data_bus_bytes);
+
+
+	for(int j=lower_byte_lane_0;j<=upper_byte_lane_0;j++)
+		begin
+			WSTRB[0][j]=1;
+		end
+	
+	for(int i=1;i<(AWLEN+1);i++)
+		begin
+			lower_byte_lane = waddr[i] - (int'(waddr[i]/data_bus_bytes))*data_bus_bytes;
+		upper_byte_lane = lower_byte_lane + no_wbytes;
+
+		for(int j=lower_byte_lane;j<=upper_byte_lane;j++)
+			begin
+				WSTRB[i][j]=1;
+			end
+		end
+endfunction
+
+
+
+
+	function void do_print(uvm_printer printer);
+		super.do_print(printer);
+
+printer.print_field("####################### WRITE ADDRESS SIGNLS#######################",null,0,UVM_DEC);
+	printer.print_field("AWID",this.AWID,8,UVM_DEC);
+	printer.print_field("AWADDR",this.AWADDR,32,UVM_DEC);
+	printer.print_field("AWLEN",this.AWLEN,8,UVM_DEC);
+	printer.print_field("AWSIZE",this.AWSIZE,3,UVM_DEC);
+	printer.print_field("AWBURST",this.AWBURST,2,UVM_DEC);
+	printer.print_field("AWVALID",this.AWVALID,1,UVM_DEC);
+	printer.print_field("AWREADY",this.AWREADY,1,UVM_DEC);
+
+printer.print_field("####################### WRITE DATA SIGNLS#######################",null,0,UVM_DEC);
+
+
+
+	printer.print_field("WID",this.WID,8,UVM_DEC);
+	foreach(WDATA[i])
+	printer.print_field($sformatf("WDATA[%0d]",i),this.WDATA[i],32,UVM_DEC);
+	foreach(WSTRB[i])
+	printer.print_field($sformatf("WSTRB[%0d]",i),this.WSTRB[i],4,UVM_BIN);
+	printer.print_field("WLAST",this.WLAST,1,UVM_DEC);
+	printer.print_field("WVALID",this.WVALID,1,UVM_DEC);
+	printer.print_field("WREADY",this.WREADY,8,UVM_DEC);
+
+
+
+printer.print_field("####################### WRITE RESPONSE  SIGNLS#######################",null,0,UVM_DEC);
+
+	printer.print_field("BID",BID,8,UVM_DEC);
+	printer.print_field("BRESP",BRESP,2,UVM_DEC);
+	printer.print_field("BVALID",BVALID,1,UVM_DEC);	
+	printer.print_field("BREADY",BREADY,1,UVM_DEC);
+
+
+printer.print_field("####################### READ ADDRESS  SIGNLS#######################",null,0,UVM_DEC);
+
+	printer.print_field("ARID",this.ARID,8,UVM_DEC);
+	printer.print_field("ARADDR",this.ARADDR,32,UVM_DEC);
+	printer.print_field("ARLEN",this.ARLEN,8,UVM_DEC);
+	printer.print_field("ARBURST",this.ARBURST,2,UVM_DEC);	
+	printer.print_field("ARSIZE",this.ARSIZE,3,UVM_DEC);
+	printer.print_field("ARVALID",this.ARVALID,1,UVM_DEC);
+	printer.print_field("ARREADY",this.ARREADY,1,UVM_DEC);
+
+
+printer.print_field("####################### READ DATA SIGNALS#######################",null,0,UVM_DEC);
+	
+	printer.print_field("RID",this.RID,8,UVM_DEC);
+	foreach(RDATA[i])
+	printer.print_field($sformatf("RDATA[%0d]",i),RDATA[i],32,UVM_DEC);
+	foreach(RRESP[i])
+	printer.print_field($sformatf("RRESP[%0d]",i),RRESP[i],2,UVM_DEC);
+	printer.print_field("RLAST",this.RLAST,1,UVM_DEC);
+	printer.print_field("RVALID",this.RVALID,1,UVM_DEC);
+	printer.print_field("RREADY",this.RREADY,1,UVM_DEC);
+endfunction
+
+function bit do_compare(uvm_object rhs,uvm_comparer comparer);
+
+
+	//handle for overriding//
+	axi_xtn rhs_;
+
+	if(!$cast(rhs_,rhs))
+	  begin
+		`uvm_fatal("do_compare","cast of rhs is not proper")
+		return 0;
+	  end
+
+
+	//comaparing the data//
+	//sig_name ==rhs_.sig name//
+
+
+	return super.do_compare(rhs,comparer) &&
+			(AWID==rhs_.AWID)&&
+			(AWADDR==rhs_.AWADDR)&&
+			(AWLEN==rhs_.AWLEN)&&
+			(AWSIZE==rhs_.AWSIZE)&&
+			(AWBURST==rhs_.AWBURST)&& 
+			(AWVALID==rhs_.AWVALID)&&
+			(AWREADY==rhs_.AWREADY)&&
+		
+
+			(WID==rhs_.WID) &&
+				(WDATA==rhs_.WDATA) &&
+				(WSTRB==rhs_.WSTRB) &&
+				(WLAST==rhs_.WLAST) &&
+				(WVALID==rhs_.WVALID) &&
+				(WREADY==rhs_.WREADY) &&
+	
+				(BID==rhs_.BID) &&
+				(BRESP==rhs_.BRESP) &&
+				(BVALID==rhs_.BVALID) &&
+				(BREADY==rhs_.BREADY) &&
+
+				(ARID==rhs_.ARID) &&
+				(ARADDR==rhs_.ARADDR) &&
+				(ARLEN==rhs_.ARLEN) &&
+				(ARSIZE==rhs_.ARSIZE) &&
+				(ARBURST==rhs_.ARBURST) &&
+				(ARVALID==rhs_.ARVALID) &&
+				(ARREADY==rhs_.ARREADY) &&
+
+				(RID==rhs_.RID) &&
+				(RDATA==rhs_.RDATA) &&
+				(RRESP==rhs_.RRESP) &&
+				(RLAST==rhs_.RLAST) &&
+				(RVALID==rhs_.RVALID) &&
+				(RREADY==rhs_.RREADY);
+	endfunction
+	
+endclass
+
+

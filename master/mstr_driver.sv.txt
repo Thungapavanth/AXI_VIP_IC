@@ -1,0 +1,263 @@
+class mstr_driver extends uvm_driver#(axi_xtn);
+	`uvm_component_utils(mstr_driver)
+
+
+	virtual axi_if axi_vif;
+	
+	mstr_config mstr_cfg;	
+
+	axi_xtn q1[$],q2[$],q3[$],q4[$],q5[$];
+
+
+	//for particular master to be worked at a time//
+	semaphore sem_wdcd = new();//write data channel dependency//
+	semaphore sem_wrcd = new();//write reponse channel dependency//
+	semaphore sem_wdc  = new(1);//WRITE data channnel
+	semaphore sem_wac  = new(1);//write address channel
+	semaphore sem_wrc  = new(1);//write respose
+
+
+	semaphore sem_rdcd = new();//read data channel dependency
+	semaphore sem_rac  = new(1);//read address
+	semaphore sem_rdc  = new(1);//read data channel
+
+
+	
+
+	function new(string name="mstr_driver",uvm_component parent);
+		super.new(name,parent);
+	endfunction
+
+	function void build_phase(uvm_phase phase);
+		super.build_phase(phase);
+		if(!uvm_config_db#(mstr_config)::get(this,"","mstr_config",mstr_cfg))
+			`uvm_fatal("mstr_driver","config is not getting")
+	endfunction
+
+
+	function void connect_phase(uvm_phase phase);
+		axi_vif=mstr_cfg.axi_vif;
+	endfunction
+
+
+	task run_phase(uvm_phase phase);
+		forever
+		begin
+			seq_item_port.get_next_item(req);
+			send_to_dut(req);
+			seq_item_port.item_done();
+		//`uvm_info(get_type_name(),$sformatf("driving data \n %s",req.sprint()),UVM_LOW)
+		
+		end
+	endtask
+
+	
+	task send_to_dut(axi_xtn xtn);
+		
+		q1.push_back(xtn);
+		q2.push_back(xtn);
+		q3.push_back(xtn);
+		q4.push_back(xtn);
+		q5.push_back(xtn);
+		
+
+		fork
+			begin
+				//write addresss channel//
+				sem_wac.get(1);
+				drive_waddrc(q1.pop_front());
+				sem_wdcd.put(1);//
+				sem_wac.put(1);
+			end
+			
+
+			//write data channel//
+
+			begin
+				sem_wdcd.get(1);
+				sem_wdc.get(1);
+				drive_wdatac(q2.pop_front());
+				sem_wdc.put(1);
+				sem_wrcd.put(1);
+			end
+
+		
+			//write reponse channel//
+			begin
+				sem_wrcd.get(1);
+				sem_wrc.get(1);
+				drive_wrspc(q3.pop_front());
+				sem_wrc.put(1);
+			end
+
+
+
+			//read address channnel//
+
+			begin
+				sem_rac.get(1);	
+				drive_raddrc(q4.pop_front());
+				sem_rdcd.put(1);
+				sem_rac.put(1);
+			end
+				
+
+			//read data channel//
+
+
+			begin
+				sem_rdcd.get(1);
+				sem_rdc.get(1);
+				drive_rdatac(q5.pop_front());
+				sem_rdc.put(1); 
+			end
+	
+		join_any
+
+	//	`uvm_info(get_type_name(),$sformatf("driving data \n %s",xtn.sprint()),UVM_LOW)
+	endtask
+
+
+
+task drive_waddrc(axi_xtn xtn);
+	
+	//$display("starting  of msrtr drive waddrc");
+
+	axi_vif.mst_drv_cb.AWVALID<=1;
+	axi_vif.mst_drv_cb.AWADDR<=xtn.AWADDR; 
+	axi_vif.mst_drv_cb.AWSIZE<=xtn.AWSIZE;
+	axi_vif.mst_drv_cb.AWLEN<=xtn.AWLEN;
+	axi_vif.mst_drv_cb.AWID<=xtn.AWID;
+	axi_vif.mst_drv_cb.AWBURST<=xtn.AWBURST;
+
+	@(axi_vif.mst_drv_cb);
+	//$display("mstr driver ready is not coming");
+	wait(axi_vif.mst_drv_cb.AWREADY)
+	//$display("mst driver ready is coming");
+	//@(axi_vif.mst_drv_cb);
+	axi_vif.mst_drv_cb.AWVALID<=1'b0;
+	
+	repeat($urandom_range(1,5))
+		@(axi_vif.mst_drv_cb);
+	//`uvm_info(get_type_name(),$sformatf("driving data of waddrc \n %s",xtn.sprint()),UVM_LOW)
+	//$display("end of driver mstr waddrc");
+
+	
+
+endtask
+
+	task drive_wdatac(axi_xtn xtn);
+	//$display("start  of driver mstr  wdatac");
+
+		foreach(xtn.WDATA[i])
+		//for(int i=0;i<=xtn.WDATA.size();i++)
+			begin
+				axi_vif.mst_drv_cb.WVALID<=1'b1;
+				axi_vif.mst_drv_cb.WDATA<=xtn.WDATA[i];
+				axi_vif.mst_drv_cb.WSTRB<=xtn.WSTRB[i];
+				axi_vif.mst_drv_cb.WID<=xtn.WID;
+				if(i==(xtn.AWLEN))
+					axi_vif.mst_drv_cb.WLAST<=1'b1;
+				else
+					axi_vif.mst_drv_cb.WLAST<=1'b0;
+
+				@(axi_vif.mst_drv_cb);
+					wait(axi_vif.mst_drv_cb.WREADY)
+					//@(axi_vif.mst_drv_cb);
+	
+						axi_vif.mst_drv_cb.WVALID<=1'b0;						     
+						 axi_vif.mst_drv_cb.WLAST<=1'b0;
+				repeat($urandom_range(1,5))
+					@(axi_vif.mst_drv_cb);
+
+			end
+	//`uvm_info(get_type_name(),$sformatf("driving data of wdatac \n %s",xtn.sprint()),UVM_LOW)
+	//$display("end of mstr driver wdatac");
+
+
+	endtask
+
+
+
+	task drive_wrspc(axi_xtn xtn);
+
+		//$display("start of mstr driver wresponse ");
+		//@(axi_vif.mst_drv_cb);
+
+		axi_vif.mst_drv_cb.BREADY<=1'b1;
+		//$display("master driver bready is not high");
+		@(axi_vif.mst_drv_cb);
+			
+		wait(axi_vif.mst_drv_cb.BVALID)
+			//@(axi_vif.mst_drv_cb);
+			axi_vif.mst_drv_cb.BREADY<=1'b0;
+
+		repeat($urandom_range(1,5))
+		@(axi_vif.mst_drv_cb);
+	//`uvm_info(get_type_name(),$sformatf("driving data of wresponse channel \n %s",xtn.sprint()),UVM_LOW)
+		//$display("end of mstr driver wresponse ");
+
+
+	endtask
+
+	
+
+	task drive_raddrc(axi_xtn xtn);
+				//$display("start of mstr driver raddrc ");
+
+		axi_vif.mst_drv_cb.ARID<=xtn.ARID;
+		axi_vif.mst_drv_cb.ARADDR<=xtn.ARADDR;
+		axi_vif.mst_drv_cb.ARLEN<=xtn.ARLEN;
+		axi_vif.mst_drv_cb.ARSIZE<=xtn.ARSIZE;
+		axi_vif.mst_drv_cb.ARBURST<=xtn.ARBURST;
+		axi_vif.mst_drv_cb.ARVALID<=1;
+
+		@(axi_vif.mst_drv_cb);
+	//	$display("jhu7888888888888888888888888888888888   %d",axi_vif.mst_drv_cb.ARADDR);
+
+	wait(axi_vif.mst_drv_cb.ARREADY)
+		axi_vif.mst_drv_cb.ARVALID<=0;
+	//@(axi_vif.mst_drv_cb);
+
+	repeat($urandom_range(1,5))
+		@(axi_vif.mst_drv_cb);
+	//`uvm_info(get_type_name(),$sformatf("driving data  of read addr \n %s",xtn.sprint()),UVM_LOW)
+		//$display("end of mstr driver raddrc ");
+
+
+	endtask
+
+		
+		
+
+	task drive_rdatac(axi_xtn xtn);
+
+		//$display("start of mstr driver rdatac ");
+	
+		
+		for(int i=0;i<=(xtn.ARLEN);i++)
+			begin
+				axi_vif.mst_drv_cb.RREADY<=1;
+				@(axi_vif.mst_drv_cb);
+				wait(axi_vif.mst_drv_cb.RVALID)
+				//@(axi_vif.mst_drv_cb);
+
+					axi_vif.mst_drv_cb.RREADY<=0;
+
+				repeat($urandom_range(1,5))
+					@(axi_vif.mst_drv_cb);
+			end
+	//`uvm_info(get_type_name(),$sformatf("driving data of rdatac \n %s",xtn.sprint()),UVM_LOW)
+			//$display("end of mstr driver rdatac ");
+
+
+	endtask
+		
+		
+	
+	
+		
+endclass
+
+
+

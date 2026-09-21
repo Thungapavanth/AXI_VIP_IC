@@ -1,0 +1,11 @@
+class mstr_config extends uvm_object;
+	`uvm_object_utils(mstr_config)
+
+	virtual axi_if axi_vif;
+	uvm_active_passive_enum is_active;
+	
+	function new(string name = "mstr_config");
+		super.new(name);
+	endfunction
+
+endclass
