@@ -1,0 +1,303 @@
+class slave_driver extends uvm_driver#(axi_xtn);
+	`uvm_component_utils(slave_driver)
+
+
+	virtual axi_if axi_vif;
+	
+	slave_config slave_cfg;
+
+	axi_xtn q1[$],q2[$],q3[$];
+	axi_xtn xtn;
+
+	//for particular slave to be worked at a time//
+	semaphore sem_wdcd = new();//write data channel dependency//
+	semaphore sem_wrcd = new();//write reponse channel dependency//
+	semaphore sem_wdc  = new(1);//WRITE data channnel
+	semaphore sem_wac  = new(1);//write address channel
+	semaphore sem_wrc  = new(1);//write respose
+
+
+	semaphore sem_rdcd = new();//read data channel dependency
+	semaphore sem_rac  = new(1);//read address
+	semaphore sem_rdc  = new(1);//read data channel
+
+		
+
+
+	function new(string name="slave_driver",uvm_component parent);
+		super.new(name,parent);
+	endfunction
+
+	function void build_phase(uvm_phase phase);
+		super.build_phase(phase);
+		if(!uvm_config_db#(slave_config)::get(this,"","slave_config",slave_cfg))
+			`uvm_fatal("slave_driver","config is not getting")
+	endfunction
+
+			
+	function void connect_phase(uvm_phase phase);
+		axi_vif=slave_cfg.axi_vif;
+	endfunction
+
+
+	task run_phase(uvm_phase phase);
+		forever
+			begin
+			
+				slave_drive();
+
+//	`uvm_info(get_type_name(),$sformatf("slv drv data %s",xtn.sprint()),UVM_LOW)
+			end
+	endtask
+
+
+	task slave_drive();
+		
+		fork
+				
+			//write address//
+			begin
+				sem_wac.get(1);
+				drive_waddrc();
+				sem_wdcd.put(1);
+				sem_wac.put(1);
+			end
+	
+			//write data//
+
+			begin
+				sem_wdcd.get(1);
+				sem_wdc.get(1);
+				drive_wdatac(q1.pop_front());
+				sem_wrcd.put(1);
+				sem_wdc.put(1);
+			end
+		
+			//write response//
+
+			begin
+				sem_wrcd.get(1);
+				sem_wrc.get(1);
+				drive_wrespc(q2.pop_front());
+				sem_wrc.put(1);
+			end
+		
+
+			//read address//
+			begin
+				sem_rac.get(1);
+				drive_raddrc();
+				sem_rdcd.put(1);
+				sem_rac.put(1);
+			end
+			
+
+			//read data//
+
+
+			begin
+				sem_rdcd.get(1);
+				sem_rdc.get(1);
+				drive_rdatac(q3.pop_front());
+				sem_rdc.put(1);
+			end
+
+	join_any
+endtask	
+
+		
+task drive_waddrc();
+	//$display("start slave waddr");
+				xtn=axi_xtn::type_id::create("xtn");
+	
+	axi_vif.slv_drv_cb.AWREADY<=1;
+	//$display("@@@@@@@ slave  ready is high @@@@@@@@");
+
+	@(axi_vif.slv_drv_cb);
+	//$display(" slavee drv wait for valid"); 
+	wait(axi_vif.slv_drv_cb.AWVALID)
+	//@(axi_vif.slv_drv_cb);
+
+	//$display(" slavee drv  valid is getting "); 
+
+		
+		xtn.AWID = axi_vif.slv_drv_cb.AWID;
+		xtn.AWLEN = axi_vif.slv_drv_cb.AWLEN;
+		xtn.AWADDR = axi_vif.slv_drv_cb.AWADDR;
+		xtn.AWSIZE = axi_vif.slv_drv_cb.AWSIZE;
+		xtn.AWBURST = axi_vif.slv_drv_cb.AWBURST;
+		xtn.AWVALID = axi_vif.slv_drv_cb.AWVALID;
+		xtn.AWREADY = axi_vif.slv_drv_cb.AWREADY;
+
+		
+	axi_vif.slv_drv_cb.AWREADY<=0;
+
+	q1.push_back(xtn);
+//	q2.push_back(xtn);
+	
+	repeat($urandom_range(1,5))
+	@(axi_vif.slv_drv_cb);
+	//$display("end oof slave waddr");
+endtask
+
+
+
+task drive_wdatac(axi_xtn xtn);
+	//$display("start of slave wdatac");
+
+//	foreach(xtn.WDATA[i])
+	for(int i=0;i<xtn.AWLEN+1;i++)
+		begin
+			axi_vif.slv_drv_cb.WREADY<=1;
+			//$display("$$$$$  slave ready is high wdatac$$$$");
+			@(axi_vif.slv_drv_cb);
+			
+
+		wait(axi_vif.slv_drv_cb.WVALID)
+	//	@(axi_vif.slv_drv_cb);
+
+		//$display("slave drv wait for valid %0d",axi_vif.slv_drv_cb.WVALID);
+		
+		xtn.WID = axi_vif.slv_drv_cb.WID;
+		xtn.WDATA[i] = axi_vif.slv_drv_cb.WDATA;
+		xtn.WSTRB[i]  = axi_vif.slv_drv_cb.WSTRB;
+		xtn.WLAST = axi_vif.slv_drv_cb.WLAST;
+		xtn.WVALID = axi_vif.slv_drv_cb.WVALID;
+		xtn.WREADY = axi_vif.slv_drv_cb.WREADY;
+
+		axi_vif.slv_drv_cb.WREADY<=0;
+		end
+
+	
+
+
+		repeat($urandom_range(1,5))
+			@(axi_vif.slv_drv_cb);
+	//$display("end  of slave drv  wdatac");
+	q2.push_back(xtn);
+
+
+endtask
+
+		
+task drive_wrespc(axi_xtn xtn);
+
+	//$display("start of slave drv  wresponse");
+
+
+	axi_vif.slv_drv_cb.BID <=xtn.WID;
+	axi_vif.slv_drv_cb.BRESP <=0;
+	axi_vif.slv_drv_cb.BVALID <= 1;
+	
+	//@(axi_vif.slv_drv_cb);
+	//$display("ready is getting or not");
+	@(axi_vif.slv_drv_cb);
+	wait(axi_vif.slv_drv_cb.BREADY)
+	//@(axi_vif.slv_drv_cb);
+
+		//$display("==== slave drv ready is high wresponse ======");
+
+	//$display("ready is getting");
+	xtn.BID = axi_vif.slv_drv_cb.WID;
+		xtn.BRESP = axi_vif.slv_drv_cb.BRESP;
+		xtn.BVALID = axi_vif.slv_drv_cb.BVALID;
+		xtn.BREADY = axi_vif.slv_drv_cb.BREADY;
+
+	axi_vif.slv_drv_cb.BVALID <= 0;
+
+	repeat($urandom_range(1,5))
+		@(axi_vif.slv_drv_cb);
+	//$display("end  of slave drv  wresponse");
+//xtn.print();
+
+endtask
+
+
+
+task drive_raddrc();
+
+//$display("start of slave drv  raddrc");
+
+
+	axi_vif.slv_drv_cb.ARREADY <=1;
+		//$display("********  slave ready is high raddrc*******");
+
+	
+	@(axi_vif.slv_drv_cb);
+	wait(axi_vif.slv_drv_cb.ARVALID)
+	//@(axi_vif.slv_drv_cb);
+
+		xtn.ARID = axi_vif.slv_drv_cb.ARID;
+		xtn.ARLEN = axi_vif.slv_drv_cb.ARLEN;
+		xtn.ARADDR = axi_vif.slv_drv_cb.ARADDR;
+		xtn.ARSIZE = axi_vif.slv_drv_cb.ARSIZE;
+		xtn.ARBURST = axi_vif.slv_drv_cb.ARBURST;
+		xtn.ARVALID = axi_vif.slv_drv_cb.ARVALID;
+		xtn.ARREADY = axi_vif.slv_drv_cb.ARREADY;
+
+
+	axi_vif.slv_drv_cb.ARREADY <=0;	
+	q3.push_back(xtn);
+	//xtn.print();
+	repeat($urandom_range(1,5))
+		@(axi_vif.slv_drv_cb);
+//$display("end  of slave drv  raddrc");
+
+	
+endtask
+
+
+
+
+task drive_rdatac(axi_xtn xtn);
+
+	//$display("start of slave drv  rdatac");
+
+	//xtn.print();
+	xtn.RDATA = new[xtn.ARLEN+1];
+	//$display("44444444444444444444444444444444444444444444444444444444444444len %d",xtn.ARLEN);
+	foreach(xtn.RDATA[i])
+//	for(int i=0;i<(xtn.ARLEN+1);i++)
+		begin
+			axi_vif.slv_drv_cb.RVALID <= 1;
+			axi_vif.slv_drv_cb.RRESP <=0;
+			axi_vif.slv_drv_cb.RID <=xtn.ARID;
+			axi_vif.slv_drv_cb.RDATA <=$urandom_range(1,500);
+//	$display("%d",axi_vif.slv_drv_cb.RDATA );
+
+			if(i==(xtn.ARLEN))
+				axi_vif.slv_drv_cb.RLAST <= 1;
+			else	
+				axi_vif.slv_drv_cb.RLAST <= 0;
+				
+			@(axi_vif.slv_drv_cb);
+			wait(axi_vif.slv_drv_cb.RREADY)
+			//@(axi_vif.slv_drv_cb);
+
+				//$display("^^^^^^^^  slave ready is high radatac^^^^^^^^^^^");
+
+		xtn.RVALID = axi_vif.slv_drv_cb.RVALID;
+		xtn.RREADY = axi_vif.slv_drv_cb.RREADY;
+		xtn.RDATA[i] = axi_vif.slv_drv_cb.RDATA;
+
+				axi_vif.slv_drv_cb.RVALID <= 0;
+				axi_vif.slv_drv_cb.RLAST <= 0;
+			
+			repeat($urandom_range(1,5))
+			@(axi_vif.slv_drv_cb);
+	
+		end
+//$display("end  of slave drv  rdatac");
+
+//	xtn.print();
+
+endtask
+
+
+		
+	
+	
+
+endclass
+
+

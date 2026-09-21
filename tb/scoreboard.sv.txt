@@ -1,0 +1,187 @@
+class scoreboard extends uvm_scoreboard;
+	`uvm_component_utils(scoreboard)
+
+	
+	
+	uvm_tlm_analysis_fifo#(axi_xtn) fifo_mstr[];
+	
+	uvm_tlm_analysis_fifo#(axi_xtn) fifo_slv[];
+
+	
+	env_config env_cfg;
+	axi_xtn master_xtn,slave_xtn;
+
+	static int pkt_rcvd,pkt_cmprd;	
+	
+
+
+	axi_xtn mstr_cov_data,slv_cov_data;
+
+
+
+	covergroup write_cg;
+		
+	option.per_instance=1;
+
+		W_ADDR 	: coverpoint mstr_cov_data.AWADDR { bins addr    = {[0:'hffff_ffff]};}
+		
+		W_LEN 	: coverpoint mstr_cov_data.AWLEN  { bins data    = {[0:15]};}
+		
+		W_SIZE  : coverpoint mstr_cov_data.AWSIZE { bins wsize   = {0,1,2};}
+		W_BURST : coverpoint mstr_cov_data.AWBURST { bins burst  ={0,1,2};}
+
+		B_RESP  : coverpoint mstr_cov_data.BRESP  { bins bresp = {0};}
+
+	endgroup
+
+
+
+	covergroup write_cg1 with function sample(int i);
+		
+
+			option.per_instance=1;
+			W_DATA  : coverpoint mstr_cov_data.WDATA[i] { bins data = {[0:'hffff_ffff]};}
+
+			W_STRB  : coverpoint mstr_cov_data.WSTRB[i] {bins  strb={1};
+								     bins strb1={2};
+								     bins strb2={3};
+								     bins strb3={4};
+								     bins strb4={8};
+								     bins strb5={12};	
+								     bins strb6={14};	
+								     bins strb7={15};}
+	endgroup
+
+
+
+
+		
+	covergroup read_cg;
+			
+	option.per_instance=1;
+
+
+	R_ADDR : coverpoint slv_cov_data.ARADDR {bins raddr = {[0:'hffff_ffff]};}
+	R_LEN  : coverpoint slv_cov_data.ARLEN  {bins rlen = {[0:15]};}
+	R_SIZE : coverpoint slv_cov_data.ARSIZE {bins rsize = {0,1,2};}
+	R_BURST : coverpoint slv_cov_data.ARBURST {bins rburst = {0,1,2};}
+
+
+	endgroup
+
+
+		
+		
+
+	covergroup read_cg1 with function sample(int i);
+		
+		option.per_instance=1;
+		
+		 
+        R_DATA : coverpoint slv_cov_data.RDATA[i] {bins radata = {[0:'hffff_ffff]};}
+
+        R_RESP : coverpoint slv_cov_data.RRESP[i] {bins rresp = {0};}
+	endgroup
+
+
+		
+	
+	function new(string name="scoreboard",uvm_component parent);
+		super.new(name,parent);
+
+
+		write_cg=new();
+		write_cg1=new();
+	
+
+		read_cg=new();
+		read_cg1=new();
+	endfunction
+
+
+	
+	
+
+	function void build_phase(uvm_phase phase);
+		super.build_phase(phase);
+
+
+	if(!uvm_config_db#(env_config)::get(this,"","env_config",env_cfg))
+		`uvm_fatal("ENV","is not getting")
+
+		
+		fifo_mstr = new[env_cfg.no_of_mstr_agnts];
+		foreach(fifo_mstr[i])
+			fifo_mstr[i] = new($sformatf("fifo_mstr[%0d]",i),this);
+
+
+
+			fifo_slv = new[env_cfg.no_of_slave_agnts];
+		foreach(fifo_slv[i])
+			fifo_slv[i] = new($sformatf("fifo_slv[%0d]",i),this);
+
+	endfunction
+
+
+
+
+
+	task run_phase(uvm_phase phase);
+		forever
+			begin
+				fifo_mstr[0].get(master_xtn);
+				`uvm_info("mst fifo",$sformatf("master trans  %s",master_xtn.sprint()),UVM_LOW)
+
+				fifo_slv[0].get(slave_xtn);
+				`uvm_info("slv fifo",$sformatf("slave trans  %s",slave_xtn.sprint()),UVM_LOW)
+
+                		 pkt_rcvd++;
+					
+
+					if(master_xtn.compare(slave_xtn))
+						begin
+						$display("===========SCOREBOARD COMPARISION SUCCESS ==============");
+						mstr_cov_data = master_xtn;
+						slv_cov_data = slave_xtn;
+                                          pkt_cmprd++;
+													
+
+						write_cg.sample();
+						read_cg.sample();
+		
+		
+						if(master_xtn.WVALID)
+							begin		
+							foreach(master_xtn.WDATA[i])
+								begin
+									write_cg1.sample(i);
+								end
+							end
+						if(slave_xtn.RVALID)
+							begin		
+							foreach(slave_xtn.RDATA[i])
+								begin
+									read_cg1.sample(i);
+								end
+							end
+						end
+
+		else 
+			begin
+				$display("==========scoreboard failed=================");
+					
+				//`uvm_info(get_type_name(),$sformatf("PRINTING FROM MSTR  %s",master_xtn.sprint()),UVM_LOW)
+		//`uvm_info(get_type_name(),$sformatf("PRINTING FROM MSTR %s",master_xtn.sprint()),UVM_LOW)
+			end
+		end
+	endtask
+
+	
+        function void report_phase(uvm_phase phase);
+            `uvm_info("SCOREBOARD",$sformatf("No. of packets received:%0d",pkt_rcvd),UVM_LOW);
+            `uvm_info("SCOREBOARD",$sformatf("No. of packets compared:%0d",pkt_cmprd),UVM_LOW);
+        endfunction
+
+		
+endclass
+

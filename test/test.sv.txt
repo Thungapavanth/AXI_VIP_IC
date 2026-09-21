@@ -1,0 +1,196 @@
+class test extends uvm_test;
+	`uvm_component_utils(test)
+
+
+	env envh;
+	env_config env_cfg;
+	slave_config slave_cfg[]; 
+	mstr_config mstr_cfg[];
+
+	int no_of_slave_agnts=1;
+	int no_of_mstr_agnts=1;
+
+
+	function new(string name="test",uvm_component parent);
+		super.new(name,parent);
+	endfunction
+
+
+	function void build_phase(uvm_phase phase);
+		super.build_phase(phase);
+			env_cfg=env_config::type_id::create("env_cfg",this);
+				env_cfg.slave_cfg=new[no_of_slave_agnts];
+					slave_cfg=new[no_of_slave_agnts];
+						foreach(slave_cfg[i])
+							begin
+								slave_cfg[i]=slave_config::type_id::create($sformatf("slave_config[%0d]",i),this);
+								if(!uvm_config_db #(virtual axi_if)::get(this,"","axi_if",slave_cfg[i].axi_vif))
+									`uvm_fatal("test","vif is not getting in test")
+
+									slave_cfg[i].is_active=UVM_ACTIVE;
+	
+									env_cfg.slave_cfg[i]=slave_cfg[i];
+							
+							end
+
+
+			env_cfg.mstr_cfg=new[no_of_mstr_agnts];
+				mstr_cfg=new[no_of_mstr_agnts];
+					foreach(mstr_cfg[i])
+						begin
+							mstr_cfg[i]=mstr_config::type_id::create($sformatf("mstr_cfg[%0d]",i),this);
+							if(!uvm_config_db#(virtual axi_if)::get(this,"","axi_if",mstr_cfg[i].axi_vif))
+									`uvm_fatal(get_type_name(),"vif is not getting in test")
+							mstr_cfg[i].is_active=UVM_ACTIVE;
+							env_cfg.mstr_cfg[i]=mstr_cfg[i];
+						end
+
+
+
+			uvm_config_db#(env_config)::set(this,"*","env_config",env_cfg);
+			envh=env::type_id::create("envh",this);
+
+
+
+		env_cfg.no_of_slave_agnts=this.no_of_slave_agnts;
+		env_cfg.no_of_mstr_agnts=this.no_of_mstr_agnts;
+endfunction
+
+
+function void end_of_elaboration_phase(uvm_phase phase);
+	uvm_top.print_topology();
+endfunction
+
+endclass
+
+			
+class fixed_trans extends test;
+	`uvm_component_utils(fixed_trans)
+
+
+	function new(string name="fixed_trans",uvm_component parent);
+		super.new(name,parent);
+	endfunction
+
+	fixed f1;
+	
+
+	function void build_phase(uvm_phase phase);
+		super.build_phase(phase);
+		
+		f1=fixed::type_id::create("f1");
+	endfunction
+
+
+
+	task run_phase(uvm_phase phase);
+		super.run_phase(phase);
+		
+
+		phase.raise_objection(this);
+	//	#1000;
+		f1.start(envh.mstr_t.mstr_agth[0].mstr_seqrh);
+		#20000;
+		phase.drop_objection(this);
+	endtask
+endclass
+
+
+
+class increment_trans extends test;
+	`uvm_component_utils(increment_trans)
+
+
+	function new(string name="increment_trans",uvm_component parent);
+		super.new(name,parent);
+	endfunction
+
+	increment inc1;
+	
+
+	function void build_phase(uvm_phase phase);
+		super.build_phase(phase);
+		
+		inc1=increment::type_id::create("inc1");
+	endfunction
+
+
+
+	task run_phase(uvm_phase phase);
+		super.run_phase(phase);
+		
+
+		phase.raise_objection(this);
+		inc1.start(envh.mstr_t.mstr_agth[0].mstr_seqrh);
+		#20000;
+		phase.drop_objection(this);
+	endtask
+endclass
+
+
+class wrap_trans extends test;
+	`uvm_component_utils(wrap_trans)
+
+
+	function new(string name="wrap_trans",uvm_component parent);
+		super.new(name,parent);
+	endfunction
+
+	wrap w1;
+	
+
+	function void build_phase(uvm_phase phase);
+		super.build_phase(phase);
+		
+		w1=wrap::type_id::create("w1");
+	endfunction
+
+
+
+	task run_phase(uvm_phase phase);
+		super.run_phase(phase);
+		
+
+		phase.raise_objection(this);
+		w1.start(envh.mstr_t.mstr_agth[0].mstr_seqrh);
+		#20000;
+		phase.drop_objection(this);
+	endtask
+endclass
+
+
+class unaligned_trans extends test;
+	`uvm_component_utils(unaligned_trans)
+
+
+	function new(string name="unaligned_trans",uvm_component parent);
+		super.new(name,parent);
+	endfunction
+
+	unaligned u1;
+	
+
+	function void build_phase(uvm_phase phase);
+		super.build_phase(phase);
+		
+		u1=unaligned::type_id::create("u1");
+	endfunction
+
+
+
+	task run_phase(uvm_phase phase);
+		super.run_phase(phase);
+		
+
+		phase.raise_objection(this);
+		u1.start(envh.mstr_t.mstr_agth[0].mstr_seqrh);
+		#1000000;
+		phase.drop_objection(this);
+	endtask
+endclass
+
+
+
+
+
+

@@ -1,0 +1,32 @@
+package axi_pkg;
+
+	import uvm_pkg::*;
+	`include "uvm_macros.svh"
+	
+	`include "mstr_config.sv"
+	`include "slv_config.sv"
+	`include "env_config.sv"
+
+	`include "axi_xtn.sv"
+	`include "mstr_seqs.sv"
+	`include "mstr_seqr.sv"
+	`include "mstr_driver.sv"
+	`include "mstr_monitor.sv"
+	`include "mstr_agent.sv"
+	`include "mstr_agt_top.sv"
+
+	`include "slv_seqs.sv"
+	`include "slv_seqr.sv"
+	`include "slv_driver.sv"
+	`include "slv_monitor.sv"
+	`include "slv_agent.sv"
+	`include "slv_agt_top.sv"
+
+	`include "scoreboard.sv"
+	`include "env.sv"
+	`include "test.sv"
+
+endpackage
+
+	
+					
